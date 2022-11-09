@@ -1,28 +1,19 @@
-{-# LANGUAGE BlockArguments      #-}
-{-# LANGUAGE DataKinds           #-}
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE GADTs               #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE TypeFamilies        #-}
-{-# LANGUAGE TypeOperators       #-}
 module Logger where
 
-import           Data.Aeson                 ((.=))
-import           Data.Aeson.Encoding        (encodingToLazyByteString, pairs)
-import           Data.ByteString.Lazy       as BSL
-import           Data.Text                  (Text)
-import qualified Data.Text                  as T
-import           Data.Time
-import           Effectful                  (Eff, Effect, IOE, liftIO,
-                                             type (:>))
-import           Effectful.Dispatch.Dynamic (interpret, localSeqUnlift,
-                                             reinterpret)
-import           Effectful.Reader.Static    (ask, local, runReader)
-import           Effectful.TH               (makeEffect)
+import           Data.Aeson                    ((.=))
+import           Data.Aeson.Encoding           (encodingToLazyByteString, pairs)
+import qualified Data.ByteString.Lazy          as BSL
+import           Data.Text                     (Text)
+import qualified Data.Text                     as T
+import           Data.Time                     (getCurrentTime)
+import           Effectful                     (Eff, Effect, IOE, liftIO,
+                                                type (:>))
+import           Effectful.Dispatch.Dynamic    (EffectHandler, interpose,
+                                                interpret, localSeqUnlift,
+                                                reinterpret)
+import           Effectful.Reader.Static       (ask, local, runReader)
+import           Effectful.State.Static.Shared (evalState, get, modify)
+import           Effectful.TH                  (makeEffect)
 
 data LogLevel
   = LogInfo
@@ -39,6 +30,12 @@ data Logger :: Effect where
 
 makeEffect ''Logger
 
+data LoggerState :: Effect where
+  GetCurrentState :: LoggerState m Bool
+  ToggleState :: LoggerState m ()
+
+makeEffect ''LoggerState
+
 logInfo, logError :: Logger :> es => Text -> Eff es ()
 logInfo = logMessage LogInfo
 logError = logMessage LogError
@@ -50,7 +47,7 @@ runStdoutLogger = reinterpret (runReader @[Text] []) \env -> \case
     now <- liftIO getCurrentTime
     let
       jsonbs = encodingToLazyByteString $ pairs
-        $  "@timestamp" .= show now
+        $  "time" .= show now
         <> "level" .= showLevel level
         <> "namespace" .= T.intercalate " " namespace
         <> "message" .= message
@@ -58,7 +55,18 @@ runStdoutLogger = reinterpret (runReader @[Text] []) \env -> \case
   WithNamespace ns m -> localSeqUnlift env \unlift ->
     local (<> [ns]) $ unlift m
 
+disableLogger :: Logger :> es => Eff es a -> Eff es a
+disableLogger = interpose noLoggerHandler
+
 runNoLogger :: Eff (Logger : es) a -> Eff es a
-runNoLogger = interpret \env -> \case
+runNoLogger = interpret noLoggerHandler
+
+noLoggerHandler :: EffectHandler Logger es
+noLoggerHandler env = \case
   LogMessage _ _    -> pure ()
   WithNamespace _ m -> localSeqUnlift env \unlift -> unlift m
+
+runLoggerState :: Eff (LoggerState : es) a -> Eff es a
+runLoggerState = reinterpret (evalState @Bool True) \_ -> \case
+  GetCurrentState -> get
+  ToggleState     -> modify not
