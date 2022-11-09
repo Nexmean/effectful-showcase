@@ -40,7 +40,7 @@ data Message = Message
   { message   :: !Text
   , tags      :: ![Text]
   , createdAt :: !UTCTime
-  }
+  } deriving Show
 
 data Storage :: Effect where
   GetMessage :: MessageId -> Storage m (Either StorageError Message)

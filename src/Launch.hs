@@ -10,10 +10,12 @@ import           Effectful.Concurrent     (runConcurrent)
 import           GHC.IO.Encoding          (setForeignEncoding,
                                            setLocaleEncoding, utf8)
 import           GHC.IO.Handle            (hSetEncoding)
-import           Logger                   (disableLogger, logError,
+import           Logger                   (disableLogger, logError, logInfo,
                                            runLoggerState, runStdoutLogger)
 import qualified Logger
-import           Network.Wai.Handler.Warp
+import           Middlewares              (storageLoggerMiddleware)
+import           Network.Wai.Handler.Warp (defaultSettings, runSettings,
+                                           setOnException, setPort)
 import           Servant.Server           (Handler (..))
 import           Servant.Server.Generic   (genericServeT)
 import           Server                   (apiHandler)
@@ -29,7 +31,7 @@ launch = do
   hSetEncoding stderr utf8
   runEffects
     $ withUnliftStrategy (ConcUnlift Persistent Unlimited)
-    $ withEffToIO \effToIO -> runServer $ UnliftIO effToIO
+    $ withEffToIO \effToIO -> effToIO $ runServer $ UnliftIO effToIO
   where
     runEffects
       = runEff
@@ -38,6 +40,7 @@ launch = do
       . runLoggerState
       . runCurrentTimeIO
       . runStorageSTM
+      . storageLoggerMiddleware
     disableLoggerIfNeed m = do
       enabled <- Logger.getCurrentState
       let
@@ -46,6 +49,7 @@ launch = do
           | otherwise = disableLogger
       runLogs m
     runServer (UnliftIO effToIO) = do
+      logInfo "Starting server on 8080 port"
       liftIO $ runSettings settings
         $ genericServeT (Handler . ExceptT . fmap Right . effToIO . disableLoggerIfNeed) apiHandler
       where

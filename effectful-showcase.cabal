@@ -21,6 +21,7 @@ library
                     , Launch
                     , Logger
                     , CurrentTime
+                    , Middlewares
                     , Server
                     , Storage
     -- other-modules:
