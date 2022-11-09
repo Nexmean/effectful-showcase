@@ -9,8 +9,7 @@ import           Data.Aeson.Types (defaultOptions)
 import           Data.Text        (Text)
 import           Data.Time        (UTCTime)
 import           GHC.Generics     (Generic)
-import           Servant          (Get, JSON, Post, QueryParam', ReqBody,
-                                   Required, Strict, type (:>))
+import           Servant          (Capture, Get, JSON, Post, ReqBody, type (:>))
 import           Servant.API      (GenericMode (type (:-)))
 
 type MessageId = Word
@@ -52,8 +51,8 @@ instance ToJSON Ok where
   toJSON Ok = object ["status" .= ("ok" :: Text)]
 
 data Api routes = Api
-  { getMessage :: routes :- "get" :> "message" :> QueryParam' [Required, Strict] "messageId" MessageId :> Get '[JSON] MessageOut
-  , listTag    :: routes :- "list" :> "tag" :> QueryParam' [Required, Strict] "tag" Text :> Get '[JSON] [MessageOut]
+  { getMessage :: routes :- "get" :> "message" :> Capture "messageId" MessageId :> Get '[JSON] MessageOut
+  , listTag    :: routes :- "list" :> "tag" :> Capture "tag" Text :> Get '[JSON] [MessageOut]
   , save       :: routes :- "save" :> ReqBody '[JSON] MessageIn :> Post '[JSON] IdObj
   , toggleLogs :: routes :- "toggle-logs" :> Post '[JSON] Ok
   } deriving Generic
