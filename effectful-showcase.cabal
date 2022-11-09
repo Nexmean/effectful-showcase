@@ -17,8 +17,7 @@ common warnings
 
 library
     import:           warnings
-    exposed-modules:  MyLib
-                    , Api
+    exposed-modules:  Api
                     , Launch
                     , Logger
                     , CurrentTime
