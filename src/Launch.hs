@@ -13,12 +13,13 @@ import           GHC.IO.Handle            (hSetEncoding)
 import           Logger                   (disableLogger, logError, logInfo,
                                            runLoggerState, runStdoutLogger)
 import qualified Logger
-import           Middlewares              (storageLoggerMiddleware)
+import           Middlewares              (serverHandlerLoggerMiddleware,
+                                           storageLoggerMiddleware)
 import           Network.Wai.Handler.Warp (defaultSettings, runSettings,
                                            setOnException, setPort)
 import           Servant.Server           (Handler (..))
 import           Servant.Server.Generic   (genericServeT)
-import           Server                   (apiHandler)
+import           Server                   (apiHandler, runServerHandler)
 import           Storage                  (runStorageSTM)
 import           System.IO                (stderr, stdin, stdout)
 
@@ -40,7 +41,9 @@ launch = do
       . runLoggerState
       . runCurrentTimeIO
       . runStorageSTM
+      . runServerHandler
       . storageLoggerMiddleware
+      . serverHandlerLoggerMiddleware
     disableLoggerIfNeed m = do
       enabled <- Logger.getCurrentState
       let

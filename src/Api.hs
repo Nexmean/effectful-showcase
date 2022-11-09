@@ -15,7 +15,7 @@ import           Servant.API      (GenericMode (type (:-)))
 type MessageId = Word
 
 newtype IdObj = IdObj { id_ :: MessageId }
-  deriving Generic
+  deriving (Show, Generic)
 
 instance ToJSON IdObj where
   toJSON = genericToJSON jsonOptions
@@ -25,14 +25,14 @@ data MessageOut = MessageOut
   , message   :: !Text
   , tags      :: ![Text]
   , createdAt :: !UTCTime
-  } deriving Generic
+  } deriving (Show, Generic)
 
 data MessageIn = MessageIn
   { message :: !Text
   , tags    :: ![Text]
-  } deriving Generic
+  } deriving (Show, Generic)
 
-data Ok = Ok
+data Ok = Ok deriving Show
 
 jsonOptions :: Options
 jsonOptions = defaultOptions
