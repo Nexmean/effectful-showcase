@@ -1,5 +1,6 @@
 module Logger where
 
+import           Control.Monad                 (when)
 import           Data.Aeson                    ((.=))
 import           Data.Aeson.Encoding           (encodingToLazyByteString, pairs)
 import qualified Data.ByteString.Lazy          as BSL
@@ -51,23 +52,18 @@ runStdoutLogger = reinterpret (runReader @[Text] []) \env -> \case
         <> "namespace" .= T.intercalate " " namespace
         <> "message" .= message
     liftIO $ BSL.putStr $ BSL.append jsonbs "\n"
-  WithNamespace ns m -> localSeqUnlift env \unlift ->
-    local (<> [ns]) $ unlift m
-
-disableLogger :: Logger :> es => Eff es a -> Eff es a
-disableLogger = interpose \env -> \case
-  LogMessage _ _     -> pure ()
-  WithNamespace ns m -> localSeqUnlift env \unlift ->
-    unlift $ withNamespace ns m
+  WithNamespace ns m -> local (<> [ns]) do
+    localSeqUnlift env \unlift -> unlift m
 
 runLoggerState :: Logger :> es => Eff (LoggerState : es) a -> Eff es a
-runLoggerState = runState' . runLogger
+runLoggerState = runState' . augmentLogger
   where
     runState' = reinterpret (evalState @Bool True) \_ -> \case
       GetCurrentState -> get
       ToggleState     -> modify not
-    runLogger m = do
-      enabled <- getCurrentState
-      if enabled
-         then m
-         else disableLogger m
+    augmentLogger = interpose \env -> \case
+      LogMessage lvl msg -> do
+        enabled <- getCurrentState
+        when enabled $ logMessage lvl msg
+      WithNamespace ns m -> withNamespace ns do
+        localSeqUnlift env \unlift -> unlift m

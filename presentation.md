@@ -40,8 +40,8 @@ runStdoutLogger = reinterpret (runReader @[Text] []) \env -> \case
   LogMessage level message -> do
     namespace <- ask
     liftIO $ putStrLn $ "[" <> level <> "] " <> intercalate "." namespace <> ": " <> message
-  WithNamespace ns m -> localSeqUnlift env \unlift ->
-    local (<> [ns]) $ unlift m
+  WithNamespace ns m -> local (<> [ns]) do
+    unlocalSeqUnlift env \unlift -> lift m
 ```
 
 ---
@@ -121,8 +121,8 @@ runStdoutLogger = reinterpret (runReader @[Text] []) \env -> \case
   LogMessage level message -> do
     namespace <- ask
     liftIO $ putStrLn $ "[" <> level <> "] " <> intercalate "." namespace <> ": " <> message
-  WithNamespace ns m -> localSeqUnlift env \unlift ->
-    local (<> [ns]) $ unlift m
+  WithNamespace ns m -> local (<> [ns]) do
+    localSeqUnlift env \unlift -> unlift m
 ```
 
 ---
