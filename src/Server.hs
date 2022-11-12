@@ -1,56 +1,59 @@
-{-# LANGUAGE NamedFieldPuns  #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE RecordWildCards    #-}
 module Server where
 
 import           Api                        (Api (Api), MessageId)
 import qualified Api
-import           Control.Exception          (Exception, throwIO)
+import           Control.Exception          (Exception)
 import           CurrentTime                (CurrentTime, getCurrentTime)
 import           Data.Text                  (Text)
-import           Effectful                  (Eff, Effect, IOE, liftIO,
-                                             type (:>))
-import           Effectful.Dispatch.Dynamic (interpret)
+import           Effectful                  (Eff, Effect, type (:>))
+import           Effectful.Dispatch.Dynamic (reinterpret)
+import           Effectful.Error.Static     (Error, runErrorNoCallStack,
+                                             throwError)
 import           Effectful.TH               (makeEffect)
 import           Logger                     (LoggerState)
 import qualified Logger
 import           Servant.Server.Generic     (AsServerT)
 import qualified Storage
-import           Storage                    (Storage)
+import           Storage                    (Storage, StorageError)
 
-data ServerHandler :: Effect where
-  GetMessage :: Api.MessageId -> ServerHandler m Api.MessageOut
-  ListTag :: Text -> ServerHandler m [Api.MessageOut]
-  Save :: Api.MessageIn -> ServerHandler m Api.IdObj
-  ToggleLogs :: ServerHandler m Api.Ok
+data Server :: Effect where
+  GetMessage :: Api.MessageId -> Server m Api.MessageOut
+  ListTag :: Text -> Server m [Api.MessageOut]
+  Save :: Api.MessageIn -> Server m Api.IdObj
+  ToggleLogs :: Server m Api.Ok
 
-makeEffect ''ServerHandler
+makeEffect ''Server
 
 apiHandler
-  :: ServerHandler :> es
+  :: Server :> es
   => Api (AsServerT (Eff es))
 apiHandler = Api{ getMessage, listTag, save, toggleLogs }
 
+newtype ServerError = StorageError { storageError :: StorageError }
+  deriving stock Show
+  deriving anyclass Exception
+
 runServerHandler
-  :: ( IOE :> es
-     , LoggerState :> es
+  :: ( LoggerState :> es
      , Storage :> es
-     , CurrentTime :> es
-     )
-  => Eff (ServerHandler : es) a
-  -> Eff es a
-runServerHandler = interpret \_ -> \case
+     , CurrentTime :> es )
+  => Eff (Server : es) a
+  -> Eff es (Either ServerError a)
+runServerHandler = reinterpret (runErrorNoCallStack @ServerError) \_ -> \case
   GetMessage mId -> getMessageHandler mId
   ListTag tag    -> listTagHandler tag
   Save mIn       -> saveHandler mIn
   ToggleLogs     -> toggleLogsHandler
 
 getMessageHandler
-  :: (IOE :> es, Storage :> es)
+  :: (Error ServerError :> es, Storage :> es)
   => Api.MessageId -> Eff es Api.MessageOut
 getMessageHandler messageId = do
-  message <- Storage.getMessage messageId >>= \case
-    Left e  -> throwEff e
-    Right m -> pure m
+  message <- Storage.getMessage messageId >>= throwEitherMap StorageError
   pure $ storageMessageToApiMessageOut messageId message
 
 listTagHandler
@@ -80,5 +83,7 @@ toggleLogsHandler = do
 storageMessageToApiMessageOut :: MessageId -> Storage.Message -> Api.MessageOut
 storageMessageToApiMessageOut id_ Storage.Message{..} = Api.MessageOut{..}
 
-throwEff :: (IOE :> es, Exception e) => e -> Eff es a
-throwEff = liftIO . throwIO
+throwEitherMap :: Error err' :> es => (err -> err') -> Either err a -> Eff es a
+throwEitherMap f = \case
+  Left e    -> throwError $ f e
+  Right res -> pure res

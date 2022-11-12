@@ -6,13 +6,13 @@ import           Effectful.Dispatch.Dynamic (interpose)
 import           Logger                     (Logger, logError, logInfo,
                                              withNamespace)
 import qualified Server
-import           Server                     (ServerHandler)
+import           Server                     (Server)
 import qualified Storage
 import           Storage                    (Storage)
 
 storageLoggerMiddleware :: (Storage :> es, Logger :> es) => Eff es a -> Eff es a
-storageLoggerMiddleware = interpose \_ -> \case
-  Storage.GetMessage messageId -> withNamespace "storage" do
+storageLoggerMiddleware = interpose \_ -> withNamespace "storage" . \case
+  Storage.GetMessage messageId -> do
     logInfo $ "Handling Storage.getMessage with messageId=" <> T.pack (show messageId)
     res <- Storage.getMessage messageId
     case res of
@@ -20,20 +20,20 @@ storageLoggerMiddleware = interpose \_ -> \case
       Right message -> logInfo $ "Storage.getMessage respond with " <> T.pack (show message)
     pure res
 
-  Storage.GetMessagesByTag tag -> withNamespace "storage" do
+  Storage.GetMessagesByTag tag -> do
     logInfo $ "Handling getMessagesByTag with tag=" <> tag
     res <- Storage.getMessagesByTag tag
     logInfo $ "getMessagesByTag respond with " <> (T.pack . show . length $ res) <> " messages"
     pure res
 
-  Storage.InsertMessage message -> withNamespace "storage" do
+  Storage.InsertMessage message -> do
     logInfo $ "Handling inserMessage with message=" <> T.pack (show message)
     res <- Storage.insertMessage message
     logInfo $ "insertMessage respond with " <> T.pack (show res)
     pure res
 
-serverHandlerLoggerMiddleware :: (ServerHandler :> es, Logger :> es) => Eff es a -> Eff es a
-serverHandlerLoggerMiddleware = interpose \_ -> withNamespace "server" . \case
+serverLoggerMiddleware :: (Server :> es, Logger :> es) => Eff es a -> Eff es a
+serverLoggerMiddleware = interpose \_ -> withNamespace "server" . \case
   Server.GetMessage messageId -> withNamespace "getMessage" do
     logInfo $ "Handling request with messageId=" <> T.pack (show messageId)
     res <- Server.getMessage messageId
@@ -53,7 +53,7 @@ serverHandlerLoggerMiddleware = interpose \_ -> withNamespace "server" . \case
     pure  res
 
   Server.ToggleLogs -> withNamespace "toggleLogs" do
-    logInfo $ "Handling request"
+    logInfo "Handling request"
     res <- Server.toggleLogs
     logInfo $ "Responding with " <> T.pack (show res)
     pure res

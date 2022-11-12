@@ -8,8 +8,7 @@ import qualified Data.Text                     as T
 import           Data.Time                     (getCurrentTime)
 import           Effectful                     (Eff, Effect, IOE, liftIO,
                                                 type (:>))
-import           Effectful.Dispatch.Dynamic    (EffectHandler, interpose,
-                                                interpret, localSeqUnlift,
+import           Effectful.Dispatch.Dynamic    (interpose, localSeqUnlift,
                                                 reinterpret)
 import           Effectful.Reader.Static       (ask, local, runReader)
 import           Effectful.State.Static.Shared (evalState, get, modify)
@@ -56,17 +55,19 @@ runStdoutLogger = reinterpret (runReader @[Text] []) \env -> \case
     local (<> [ns]) $ unlift m
 
 disableLogger :: Logger :> es => Eff es a -> Eff es a
-disableLogger = interpose noLoggerHandler
+disableLogger = interpose \env -> \case
+  LogMessage _ _     -> pure ()
+  WithNamespace ns m -> localSeqUnlift env \unlift ->
+    unlift $ withNamespace ns m
 
-runNoLogger :: Eff (Logger : es) a -> Eff es a
-runNoLogger = interpret noLoggerHandler
-
-noLoggerHandler :: EffectHandler Logger es
-noLoggerHandler env = \case
-  LogMessage _ _    -> pure ()
-  WithNamespace _ m -> localSeqUnlift env \unlift -> unlift m
-
-runLoggerState :: Eff (LoggerState : es) a -> Eff es a
-runLoggerState = reinterpret (evalState @Bool True) \_ -> \case
-  GetCurrentState -> get
-  ToggleState     -> modify not
+runLoggerState :: Logger :> es => Eff (LoggerState : es) a -> Eff es a
+runLoggerState = runState' . runLogger
+  where
+    runState' = reinterpret (evalState @Bool True) \_ -> \case
+      GetCurrentState -> get
+      ToggleState     -> modify not
+    runLogger m = do
+      enabled <- getCurrentState
+      if enabled
+         then m
+         else disableLogger m

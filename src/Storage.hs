@@ -5,7 +5,7 @@
 {-# LANGUAGE TupleSections       #-}
 module Storage
   ( runStorageSTM
-  , Storage (..), Message (..), MessageId
+  , Storage (..), StorageError (..), Message (..), MessageId
   , getMessage, getMessagesByTag, insertMessage
   ) where
 
