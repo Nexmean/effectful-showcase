@@ -41,7 +41,7 @@ runStdoutLogger = reinterpret (runReader @[Text] []) \env -> \case
     namespace <- ask
     liftIO $ putStrLn $ "[" <> level <> "] " <> intercalate "." namespace <> ": " <> message
   WithNamespace ns m -> local (<> [ns]) do
-    unlocalSeqUnlift env \unlift -> lift m
+    localSeqUnlift env \unlift -> unlift m
 ```
 
 ---
