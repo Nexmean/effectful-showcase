@@ -16,8 +16,8 @@ backgroundColor: #fff
 - меньше кода лишённого доменного смысла
 - сложный код скрыт за понятными интерфейсами
 - бизнес сценарии отделены от технических деталей
-- единая точка определяющая реализацию процесса
-- интерфейсы зависят только от типов данных
+- минимальное количество переходов по коду
+- интерфейсы зависят от данных
 - реализации зависят от интерфейсов
 ### И как нам с этим поможет effectful?
 ---
@@ -26,7 +26,7 @@ backgroundColor: #fff
 ```haskell
 -- effectful лишает нас необходимости писать код для склейки отдельных деталей приложения
 -- реализации эффектов склеиваются через композицию,
--- далее не требуется никакой дополнительной работы
+-- далее не требуется никаких дополнительных действий
 runDependencies
   = runEff
   . runConcurrent
@@ -34,20 +34,20 @@ runDependencies
   . runCurrentTimeIO
   . runStorage
 
--- реализации так-же не требуют много безсмысленного кода
-runStdoutLogger :: IOE :> es => Eff (Logger : es) a -> Eff es a
-runStdoutLogger = reinterpret (runReader @[Text] []) \env -> \case
-  LogMessage level message -> do
-    namespace <- ask
-    liftIO $ putStrLn $ "[" <> level <> "] " <> intercalate "." namespace <> ": " <> message
-  WithNamespace ns m -> local (<> [ns]) do
-    localSeqUnlift env \unlift -> unlift m
+-- интерфейсы и реализации не требуют много "безсмысленного" кода
+data CurrentTime :: Effect where
+  GetCurrentTime :: CurrentTime m UTCTime
+makeEffect ''CurrentTime
+
+runCurrentTimeIO :: IOE :> es => Eff (CurrentTime : es) a -> Eff es a
+runCurrentTimeIO = interpret \_ -> \case
+  GetCurrentTime -> liftIO Time.getCurrentTime
 ```
 
 ---
 #### Сложный код скрыт за понятными интерфейсами
 ```haskell
--- effectful скрывает от нас не всегда простую работу с зависимостями за простым интерфейсом
+-- effectful скрывает от нас работу с зависимостями за простым интерфейсом
 
 -- | интерпретирует эффект
 interpret
@@ -60,11 +60,11 @@ reinterpret
 -- | заменяет эффект новым,
 --   при этом из нового хэндлера доступен вызов старого
 interpose
-  :: (e :> es) => EffectHandler e es -> Eff es a -> Eff es a 
+  :: e :> es => EffectHandler e es -> Eff es a -> Eff es a 
                   
 -- | то же самое, но с приватными зависимостями
 impose
-  :: (e :> es) => (Eff privateEs a -> Eff es b) -> EffectHandler e privateEs -> Eff es a -> Eff es b
+  :: e :> es => (Eff privateEs a -> Eff es b) -> EffectHandler e privateEs -> Eff es a -> Eff es b
 ```
 
 ---
@@ -89,8 +89,12 @@ serverLoggerMiddleware = interpose \_ -> \case
 ```
 
 ---
-#### Единая точка определяющая реализацию процесса
+#### Минимальное количество переходов по коду
 ```haskell
+-- благодаря простой композиции различных реализаций
+-- мы легко можем сложить её определение для процесса/хэндлера
+-- в одном месте, что значит, что переход от реализации к реализации
+-- его зависимости требует всего двух переходов даже без HLS
 runServerHandler' = runServerHandler . serverLoggerMiddleware
 
 runDependencies
@@ -143,3 +147,15 @@ runServerHandler = reinterpret (runErrorNoCallStack @ServerError) \_ -> \case
   ToggleLogs     -> toggleLogsHandler
 
 ```
+
+--- 
+#### Но есть и ограничения
+- нельзя сделать `NonDet` (аналог `ListT`), эффект выражающий возможность метода разветвлять последующией вычисления
+- нельзя сделать `Coroutine`, эффект выражающий возможность вычисления прерваться на каком-то месте, а затем продолжить работу с этого места (`yield`, `resume`)
+- анлифтинг требует явного указания, если функция `unlift` будет вызываться из другого треда
+
+---
+
+- Первые две проблемы решаются трансформерами `ListT`, `ContT`, как и в случае с ReaderT-паттерном.
+- Передача в другой тред чего-то кроме данных или чистых функций в любом случае требует внимательности.
+- Сама библиотека при анлифтинге использует fail-fast подход, благодаря чему при вызове `unlift` из неуполномоченного треда мы сразу получим ошибку
